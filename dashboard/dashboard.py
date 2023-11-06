@@ -2,38 +2,22 @@ import ac
 import acsys
 import os
 import sys
-from functools import reduce
-
 sys.path.insert(0, os.path.dirname(__file__) + "/stdlib64")
 os.environ['PATH'] += ";."
 from sim_info import info
+from functools import reduce
 
 MAX_TEMP = 105
 MIN_TEMP = 65
 MAX_PRES = 27
 MIN_PRES = 25
+MAX_RPMS = 0
 
-timer_5 = 0
-timer_10 = 0
-blink = False
-last = 0
-
-window = 0
-l_tyres = []
-l_tower = []
-l_gear = 0
-l_speed = 0
-l_delta = 0
-l_rpms = 0
-l_time = 0
-l_fuel = []
-l_bbal = 0
-l_kers = 0
-
-fuel_laps = 0
-fuel_curr = 0
-fuel_init = 0
-fuel_last = 0
+def maxRpm():
+	if MAX_RPMS:
+		return MAX_RPMS
+	else:
+		return info.static.maxRpm
 
 def tempColor(t):
 	if t > MAX_TEMP:
@@ -57,17 +41,29 @@ def wearColor(w):
 	else:
 		return [1, 1, 1, 1]
 
-def getCarPosition(carId):
-	if info.graphics.session == 2:
-		return ac.getCarRealTimeLeaderboardPosition(carId) + 1
-	else:
-		return ac.getCarLeaderboardPosition(carId)
-
 def parabola(x, w, h):
 	return h * ((2*x/w - 1)**2 - 1)
 
+window = 0
+labels = {}
+
+timer_update = 0
+blink = False
+timer_blink = 0
+last = 0
+line = False
+timer_line = 60
+
+fuel_laps = 0
+fuel_curr = 0
+fuel_init = 0
+fuel_last = 0
+fuel_mean = 0
+kers_curr = 100
+kers_last = 0
+
 def acMain(ac_version):
-	global window, l_tyres, l_tower, l_gear, l_speed, l_delta, l_drs, l_rpms, l_time, l_best, l_fuel, l_bbal, l_kers
+	global window, labels
 
 	window = ac.newApp("Dashboard")
 	ac.setSize(window, 700, 150)
@@ -80,192 +76,196 @@ def acMain(ac_version):
 	ac.initFont(0, font_name, 0, 0)
 	ac.addRenderCallback(window, onFormRender)
 
-	l_gear = ac.addLabel(window, "N")
-	ac.setPosition(l_gear, 350, 6)
-	ac.setFontAlignment(l_gear, "center")
-	ac.setCustomFont(l_gear, font_name, 0, 0)
-	ac.setFontSize(l_gear, 48)
+	labels.update({'gear': ac.addLabel(window, "N")})
+	ac.setPosition(labels['gear'], 350, 6)
+	ac.setFontAlignment(labels['gear'], "center")
+	ac.setCustomFont(labels['gear'], font_name, 0, 0)
+	ac.setFontSize(labels['gear'], 48)
 
-	l_speed = ac.addLabel(window, "123")
-	ac.setPosition(l_speed, 305, 29)
-	ac.setFontAlignment(l_speed, "right")
-	ac.setCustomFont(l_speed, font_name, 0, 0)
-	ac.setFontSize(l_speed, 26)
+	labels.update({'speed': ac.addLabel(window, "123")})
+	ac.setPosition(labels['speed'], 305, 29)
+	ac.setFontAlignment(labels['speed'], "right")
+	ac.setCustomFont(labels['speed'], font_name, 0, 0)
+	ac.setFontSize(labels['speed'], 26)
 
-	l_delta = ac.addLabel(window, "-1.23")
-	ac.setPosition(l_delta, 395, 38)
-	ac.setFontAlignment(l_delta, "left")
-	ac.setCustomFont(l_delta, font_name, 0, 0)
-	ac.setFontSize(l_delta, 16)
+	labels.update({'delta': ac.addLabel(window, "-1.23")})
+	ac.setPosition(labels['delta'], 395, 38)
+	ac.setFontAlignment(labels['delta'], "left")
+	ac.setCustomFont(labels['delta'], font_name, 0, 0)
+	ac.setFontSize(labels['delta'], 16)
 
-	l_drs = ac.addLabel(window, "DRS")
-	ac.setPosition(l_drs, 350, 5)
-	ac.setFontAlignment(l_drs, "center")
-	ac.setCustomFont(l_drs, font_name, 0, 0)
-	ac.setFontSize(l_drs, 12)
+	labels.update({'drs': ac.addLabel(window, "DRS")})
+	ac.setPosition(labels['drs'], 350, 5)
+	ac.setFontAlignment(labels['drs'], "center")
+	ac.setCustomFont(labels['drs'], font_name, 0, 0)
+	ac.setFontSize(labels['drs'], 12)
 
-	l_rpms = ac.addLabel(window, "1234")
-	ac.setPosition(l_rpms, 350, 62)
-	ac.setFontAlignment(l_rpms, "center")
-	ac.setCustomFont(l_rpms, font_name, 0, 0)
-	ac.setFontSize(l_rpms, 12)
+	labels.update({'rpms': ac.addLabel(window, "1234")})
+	ac.setPosition(labels['rpms'], 350, 62)
+	ac.setFontAlignment(labels['rpms'], "center")
+	ac.setCustomFont(labels['rpms'], font_name, 0, 0)
+	ac.setFontSize(labels['rpms'], 12)
 
-	l_bbal = ac.addLabel(window, "BBal 12.3")
-	ac.setPosition(l_bbal, 274, 89)
-	ac.setFontAlignment(l_bbal, "center")
-	ac.setCustomFont(l_bbal, font_name, 0, 0)
-	ac.setFontSize(l_bbal, 14)
+	labels.update({'bbal': ac.addLabel(window, "BBal 12.3")})
+	ac.setPosition(labels['bbal'], 274, 89)
+	ac.setFontAlignment(labels['bbal'], "center")
+	ac.setCustomFont(labels['bbal'], font_name, 0, 0)
+	ac.setFontSize(labels['bbal'], 14)
 
-	l_kers = ac.addLabel(window, "SoC 12 Lap 34")
-	ac.setPosition(l_kers, 274, 124)
-	ac.setFontAlignment(l_kers, "center")
-	ac.setCustomFont(l_kers, font_name, 0, 0)
-	ac.setFontSize(l_kers, 14)
+	labels.update({'kers': ac.addLabel(window, "SoC 12 Lap 34")})
+	ac.setPosition(labels['kers'], 274, 124)
+	ac.setFontAlignment(labels['kers'], "center")
+	ac.setCustomFont(labels['kers'], font_name, 0, 0)
+	ac.setFontSize(labels['kers'], 14)
 
-	l_time = ac.addLabel(window, "Last 1:23.456")
-	ac.setPosition(l_time, 426, 89)
-	ac.setFontAlignment(l_time, "center")
-	ac.setCustomFont(l_time, font_name, 0, 0)
-	ac.setFontSize(l_time, 14)
+	labels.update({'time': ac.addLabel(window, "Last 1:23.456")})
+	ac.setPosition(labels['time'], 426, 89)
+	ac.setFontAlignment(labels['time'], "center")
+	ac.setCustomFont(labels['time'], font_name, 0, 0)
+	ac.setFontSize(labels['time'], 14)
 
-	l_best = ac.addLabel(window, "Best 1:23.456")
-	ac.setPosition(l_best, 426, 124)
-	ac.setFontAlignment(l_best, "center")
-	ac.setCustomFont(l_best, font_name, 0, 0)
-	ac.setFontSize(l_best, 14)
+	labels.update({'best': ac.addLabel(window, "Best 1:23.456")})
+	ac.setPosition(labels['best'], 426, 124)
+	ac.setFontAlignment(labels['best'], "center")
+	ac.setCustomFont(labels['best'], font_name, 0, 0)
+	ac.setFontSize(labels['best'], 14)
 
-	for i in range(8):
-		l_fuel.append(ac.addLabel(window, "12.3"))
-		ac.setPosition(l_fuel[i], 30 + i%2*50, 37 + i//2*27)
-		ac.setFontAlignment(l_fuel[i], "center")
-		ac.setCustomFont(l_fuel[i], font_name, 0, 0)
-		ac.setFontSize(l_fuel[i], 14 - 4 * (i//2 - i//4*2))
-	ac.setText(l_fuel[2], "Fuel")
-	ac.setText(l_fuel[3], "Last")
-	ac.setText(l_fuel[6], "Laps")
-	ac.setText(l_fuel[7], "Avg")
+	labels.update({'fuel': []})
+	for i in range(4):
+		labels['fuel'].append(ac.addLabel(window, "12.34"))
+		ac.setPosition(labels['fuel'][i], 55, 35 + i*28)
+		ac.setFontAlignment(labels['fuel'][i], "center")
+		ac.setCustomFont(labels['fuel'][i], font_name, 0, 0)
+		ac.setFontSize(labels['fuel'][i], 14)
 
+	labels.update({'tyres': []})
 	for i in range(12):
-		l_tyres.append(ac.addLabel(window, "123"))
-		ac.setPosition(l_tyres[i], 138 + i%2*34, 28	 + i//2*18 + i//6*7)
-		ac.setFontAlignment(l_tyres[i], "center")
-		ac.setCustomFont(l_tyres[i], font_name, 0, 0)
-		ac.setFontSize(l_tyres[i], 14)
+		labels['tyres'].append(ac.addLabel(window, "123"))
+		ac.setPosition(labels['tyres'][i], 138 + i%2*34, 28	 + i//2*18 + i//6*7)
+		ac.setFontAlignment(labels['tyres'][i], "center")
+		ac.setCustomFont(labels['tyres'][i], font_name, 0, 0)
+		ac.setFontSize(labels['tyres'][i], 14)
 
+	labels.update({'tower': []})
 	for i in range(5):
-		l_tower.append(ac.addLabel(window, "driver"))
-		ac.setPosition(l_tower[i], 602, 31 + i*23)
-		ac.setFontAlignment(l_tower[i], "center")
-		ac.setCustomFont(l_tower[i], font_name, 0, 0)
-		ac.setFontSize(l_tower[i], 14)
+		labels['tower'].append(ac.addLabel(window, "driver"))
+		ac.setPosition(labels['tower'][i], 602, 31 + i*23)
+		ac.setFontAlignment(labels['tower'][i], "center")
+		ac.setCustomFont(labels['tower'][i], font_name, 0, 0)
+		ac.setFontSize(labels['tower'][i], 14)
 
 	return "Dashboard"
 
 def acUpdate(deltaT):
-	global timer_5, timer_10, blink, last
-	global window, l_tyres, l_tower, l_gear, l_speed, l_delta, l_drs, l_rpms, l_time, l_best, l_fuel, l_bbal, l_kers
-	global fuel_laps, fuel_curr, fuel_init, fuel_last
+	global window, labels
+	global timer_blink, timer_update, timer_line, blink, last, line
+	global fuel_laps, fuel_curr, fuel_init, fuel_last, fuel_mean, kers_curr, kers_last
 
 	ac.setBackgroundOpacity(window, 0)
 
-	timer_5 += deltaT
-	if timer_5 >= 0.2:
-		timer_5 = 0
-		blink = not blink
+	timer_update += deltaT
+	timer_blink += deltaT
+	timer_line += deltaT
+	if timer_update >= 0.1:
+		timer_update = 0
 
-	timer_10 += deltaT
-	if timer_10 >= 0.1:
-		timer_10 = 0
+		if timer_blink >= 0.5:
+			blink = not blink
+			timer_blink = 0
+
+		if last != ac.getCarState(0, acsys.CS.LapCount):
+			last = ac.getCarState(0, acsys.CS.LapCount)
+			line = True
+			timer_line = 0
+		else:
+			line = False
 
 		# gear
-		if blink and info.static.maxRpm - info.physics.rpms < 25:
-			ac.setFontColor(l_gear, 1, 0, 0, 1)
+		gear = info.physics.gear
+		if gear == 0:
+			ac.setText(labels['gear'], "R")
+		elif gear == 1:
+			ac.setText(labels['gear'], "N")
 		else:
-			ac.setFontColor(l_gear, 1, 1, 1, 1)
-		if info.physics.gear == 0:
-			ac.setText(l_gear, "R")
-		elif info.physics.gear == 1:
-			ac.setText(l_gear, "N")
+			ac.setText(labels['gear'], str(gear - 1))
+		if maxRpm() - info.physics.rpms < 200:
+			ac.setFontColor(labels['gear'], 1, 0, 0, 1)
 		else:
-			ac.setText(l_gear, str(info.physics.gear - 1))
+			ac.setFontColor(labels['gear'], 1, 1, 1, 1)
 
 		# speed
-		ac.setText(l_speed, "{:.0f}".format(info.physics.speedKmh))
+		ac.setText(labels['speed'], "{:.0f}".format(info.physics.speedKmh))
 
 		# delta
-		ac.setText(l_delta, "{:+.2f}".format(ac.getCarState(0, acsys.CS.PerformanceMeter)))
+		ac.setText(labels['delta'], "{:+.2f}".format(ac.getCarState(0, acsys.CS.PerformanceMeter)))
 		if ac.getCarState(0, acsys.CS.PerformanceMeter) < 0:
-			ac.setFontColor(l_delta, 0, 1, 0, 1)
+			ac.setFontColor(labels['delta'], 0, 1, 0, 1)
 		else:
-			ac.setFontColor(l_delta, 1, 1, 1, 1)
+			ac.setFontColor(labels['delta'], 1, 1, 1, 1)
 
 		# drs
 		if info.static.hasDRS:
 			if info.physics.drsEnabled:
-				ac.setFontColor(l_drs, 0, 1, 0, 1)
+				ac.setFontColor(labels['drs'], 0, 1, 0, 1)
 			else:
-				ac.setFontColor(l_drs, 0, 0, 0, 0.5)
+				ac.setFontColor(labels['drs'], 0, 0, 0, 0.5)
 		else:
-			ac.setFontColor(l_drs, 0, 0, 0, 0)
+			ac.setFontColor(labels['drs'], 0, 0, 0, 0)
 
 		# rpms
-		if info.physics.speedKmh < 2:
-			ac.setText(l_rpms, str(info.physics.rpms))
+		if info.physics.speedKmh < 1:
+			ac.setText(labels['rpms'], str(info.physics.rpms))
 		else:
-			ac.setText(l_rpms, "")
+			ac.setText(labels['rpms'], "")
 
 		# brakes
-		ac.setText(l_bbal, "BBal {:.1f}".format(info.physics.brakeBias * 100))
+		ac.setText(labels['bbal'], "BBal {:.1f}%".format(info.physics.brakeBias * 100))
 
 		# kers
 		if info.static.hasERS or info.static.hasKERS:
 			soc = 100 * info.physics.kersCharge
-			if info.static.ersMaxJ:
-				dep = 100 * (1 - info.physics.kersCurrentKJ / info.static.ersMaxJ * 1000)
-				ac.setText(l_kers, "SoC {:00.0f} Lap {:00.0f}".format(soc*0.99, dep*0.99))
-			elif info.static.kersMaxJ:
-				dep = 100 * (1 - info.physics.kersCurrentKJ / info.static.kersMaxJ * 1000)
-				ac.setText(l_kers, "SoC {:00.0f} Lap {:00.0f}".format(soc*0.99, dep*0.99))
+			dep = 100 * info.physics.kersCurrentKJ * 1000 / (info.static.ersMaxJ + info.static.kersMaxJ)
+			if line:
+				kers_last = kers_curr
+				kers_curr = soc
+			if timer_line > 5:
+				ac.setText(labels['kers'], "SoC {:0.0f} Lap {:0.0f}".format(soc, 100 - dep))
+				ac.setFontColor(labels['kers'], 1, 1, 1, 1)
 			else:
-				ac.setText(l_kers, "SoC {:00.0f}".format(soc*0.99))
+				ac.setText(labels['kers'], "{:+.1f}%".format(kers_curr - kers_last))
+				if kers_curr - kers_last < 0:
+					ac.setFontColor(labels['kers'], 1, 0, 0, 1)
+				else:
+					ac.setFontColor(labels['kers'], 0, 1, 0, 1)
 		else:
-			ac.setText(l_kers, "{:.0f}mm {:.0f}mm".format(*map(lambda x: x*1000, info.physics.rideHeight)))
+			ac.setText(labels['kers'], "ABS {:.0f} TC {:.0f}".format(100 * info.physics.abs, 100 * info.physics.tc))
 
 		# laptime
-		ac.setText(l_time, "Last " + info.graphics.lastTime)
-		ac.setText(l_best, "Best " + info.graphics.bestTime)
+		ac.setText(labels['time'], "Last " + info.graphics.lastTime)
+		ac.setText(labels['best'], "Best " + info.graphics.bestTime)
 
 		# fuel
-		ac.setText(l_fuel[0], "{:.1f}".format(info.physics.fuel))
-		if info.graphics.currentTime == "-:--:---":
+		if ac.isCarInPitline(0) or info.graphics.currentTime == "-:--:---":
 			fuel_laps = 0
-		if ac.isCarInPitline(0):
-			fuel_laps = 0
-		if last != ac.getCarState(0, acsys.CS.LapCount):
-			last = ac.getCarState(0, acsys.CS.LapCount)
-			if not ac.isCarInPitline(0):
-				if fuel_laps == 0:
-					fuel_init = info.physics.fuel
-				else:
-					fuel_last = fuel_curr if (fuel_laps > 1) else fuel_init
-					fuel_curr = info.physics.fuel
-				fuel_laps += 1
-			ac.console(str(info.physics.fuel))
+		elif line:
+			if fuel_laps == 0:
+				fuel_init = info.physics.fuel
+			else:
+				fuel_last = fuel_curr if fuel_laps > 1 else fuel_init
+				fuel_curr = info.physics.fuel
+			fuel_laps += 1
 		if fuel_laps > 1:
-			avg = (fuel_init - fuel_curr) / (fuel_laps - 1)
-			est = info.physics.fuel / avg
-			if est < 3:
-				for i in range(len(l_fuel)):
-					ac.setFontColor(l_fuel[i], 1, 0, 0, 1)
-			ac.setText(l_fuel[1], "{:.2f}".format(fuel_last - fuel_curr))
-			ac.setText(l_fuel[4], "{:.1f}".format(est))
-			ac.setText(l_fuel[5], "{:.2f}".format(avg))
+			fuel_mean = (fuel_init - fuel_curr) / (fuel_laps - 1)
+		ac.setText(labels['fuel'][0], "{:.1f} L".format(info.physics.fuel))
+		ac.setText(labels['fuel'][1], "Last {:.2f}".format(fuel_last - fuel_curr))
+		ac.setText(labels['fuel'][2], "Mean {:.2f}".format(fuel_mean))
+		ac.setText(labels['fuel'][3], "{:.1f} laps".format(info.physics.fuel / fuel_mean if fuel_mean else 0))
+		if fuel_mean and blink and info.physics.fuel / fuel_mean < 3:
+			for i in range(len(labels['fuel'])):
+				ac.setFontColor(labels['fuel'][i], 1, 0, 0, 1)
 		else:
-			for i in range(len(l_fuel)):
-				ac.setFontColor(l_fuel[i], 1, 1, 1, 1)
-			ac.setText(l_fuel[1], "-")
-			ac.setText(l_fuel[4], "-")
-			ac.setText(l_fuel[5], "-")
+			for i in range(len(labels['fuel'])):
+				ac.setFontColor(labels['fuel'][i], 1, 1, 1, 1)
 
 		# tyres
 		for i in range(4):
@@ -274,14 +274,14 @@ def acUpdate(deltaT):
 			temp += info.physics.tyreTempM[i]
 			temp += info.physics.tyreTempO[i]
 			temp /= 3
-			ac.setText(l_tyres[index], "{:.0f}".format(temp))
-			ac.setFontColor(l_tyres[index], *tempColor(temp))
+			ac.setText(labels['tyres'][index], "{:.0f}".format(temp))
+			ac.setFontColor(labels['tyres'][index], *tempColor(temp))
 			pres = info.physics.wheelsPressure[i]
-			ac.setText(l_tyres[index + 2], "{:.0f}".format(pres))
-			ac.setFontColor(l_tyres[index + 2], *presColor(pres))
+			ac.setText(labels['tyres'][index + 2], "{:.0f}".format(pres))
+			ac.setFontColor(labels['tyres'][index + 2], *presColor(pres))
 			wear = 1000 - info.physics.tyreWear[i] * 10
-			ac.setText(l_tyres[index + 4], "{:.0f}‰".format(wear))
-			ac.setFontColor(l_tyres[index + 4], *wearColor(wear))
+			ac.setText(labels['tyres'][index + 4], "{:.0f}‰".format(wear))
+			ac.setFontColor(labels['tyres'][index + 4], *wearColor(wear))
 
 		# traffic
 		cars = []
@@ -296,59 +296,65 @@ def acUpdate(deltaT):
 		for i in range(cars_count):
 			if cars[i]["id"] == 0:
 				me = i
-		for i in range(len(l_tower)):
-			c = cars[(me - i + 2) % cars_count]["id"]
-			if i != len(l_tower)//2 and c == 0:
-				ac.setText(l_tower[i], "")
+		mid = len(labels['tower']) // 2 # highlighted tower position
+		for i in range(len(labels['tower'])):
+			c = cars[(me - i + mid) % cars_count]["id"]
+			if i != mid and c == 0:
+				ac.setText(labels['tower'][i], "")
 			else:
-				d_dist = ac.getCarState(0, acsys.CS.NormalizedSplinePosition)
-				d_dist -= ac.getCarState(c, acsys.CS.NormalizedSplinePosition)
-				d_laps = ac.getCarState(0, acsys.CS.LapCount)
-				d_laps -= ac.getCarState(c, acsys.CS.LapCount)
-				if i < len(l_tower)//2 and d_dist > 0:
-					d_dist -= 1.0
-					d_laps += 1
-				if i > len(l_tower)//2 and d_dist < 0:
-					d_dist += 1.0
-					d_laps -= 1
+				dist_delta = ac.getCarState(0, acsys.CS.NormalizedSplinePosition)
+				dist_delta -= ac.getCarState(c, acsys.CS.NormalizedSplinePosition)
+				laps_delta = ac.getCarState(0, acsys.CS.LapCount)
+				laps_delta -= ac.getCarState(c, acsys.CS.LapCount)
+				if i < mid and dist_delta > 0:
+					dist_delta -= 1.0
+					laps_delta += 1
+				if i > mid and dist_delta < 0:
+					dist_delta += 1.0
+					laps_delta -= 1
 				if info.graphics.session == 2:
-					if d_laps < 0:
-						ac.setFontColor(l_tower[i], 1, 1, 0, 1)
-					elif d_laps > 0:
-						ac.setFontColor(l_tower[i], 0, 1, 1, 1)
+					if laps_delta < 0:
+						ac.setFontColor(labels['tower'][i], 1, 1, 0, 1)
+					elif laps_delta > 0:
+						ac.setFontColor(labels['tower'][i], 0, 1, 1, 1)
 					else:
-						ac.setFontColor(l_tower[i], 1, 1, 1, 1)
-				if i == len(l_tower)//2:
-					distance = "   L{:2d}".format(ac.getCarState(c, acsys.CS.LapCount) + 1)
+						ac.setFontColor(labels['tower'][i], 1, 1, 1, 1)
+					pos = str(ac.getCarRealTimeLeaderboardPosition(c) + 1) + "."
 				else:
-					distance = "{:+6.0f}".format(d_dist * info.static.trackSPlineLength)
-				name = list(map(lambda x: x.capitalize(), ac.getDriverName(c).split(" ")))
-				ac.setText(l_tower[i], "{:3.3s}{:6.6s} {:4.4s}{}".format(
-					str(getCarPosition(c)) + ".",
-					reduce(lambda x, y: x + y[0], name, "") + name[-1][1:].lower(),
-					"PIT" if ac.isCarInPitline(c) else "(" + ac.getCarTyreCompound(c) + ")",
-					distance
-				))
+					pos = str(ac.getCarLeaderboardPosition(c)) + "."
+				name = list(ac.getDriverName(c).split(" "))
+				name = reduce(lambda x, y: x + y[0], name, "") + name[-1][1:]
+				if ac.isCarInPit(c):
+					comp = "BOX"
+				elif ac.isCarInPitline(c):
+					comp = "PIT"
+				else:
+					comp = "(" + ac.getCarTyreCompound(c) + ")"
+				if i == mid:
+					dist = "  L{:2d}".format(ac.getCarState(c, acsys.CS.LapCount) + 1)
+				else:
+					dist = "{:+5.0f}".format(dist_delta * info.static.trackSPlineLength)
+				ac.setText(labels['tower'][i], "{:3.3s}{:7.7s} {:4.4s}{}".format(pos, name, comp, dist))
 
 def onFormRender(deltaT):
 	# rpms
-	if info.static.maxRpm - info.physics.rpms < 250:
+	if maxRpm() - info.physics.rpms < 400:
 		ac.glColor4f(1, 0, 0, 1)
 	else:
 		ac.glColor4f(1, 1, 1, 1)
-	p_w = 294
-	s_w = 18
-	gap = 3
-	for i in range(p_w//(s_w+gap)):
-		rpmPercent = i / (p_w // (s_w+gap))
+	p_w = 300
+	s_w = 15
+	gap = 1
+	for i in range((p_w-gap)//(s_w+gap)):
+		rpmPercent = i / ((p_w-gap)//(s_w+gap))
 		minPercent = 0.67
-		if info.physics.rpms > info.static.maxRpm*(minPercent + (1 - minPercent)*rpmPercent):
-			x = i*(gap + s_w) + gap/2
+		if info.physics.rpms > maxRpm() * (minPercent + (1 - minPercent)*rpmPercent):
+			x = i*(gap + s_w) + gap + 6
 			ac.glBegin(3)
-			ac.glVertex2f(203 + x,       32.5 + parabola(x,       p_w, 30.5))       # TL
-			ac.glVertex2f(203 + x,       32.5 + parabola(x,       p_w, 30.5) + 2) # BL
-			ac.glVertex2f(203 + x + s_w, 32.5 + parabola(x + s_w, p_w, 30.5) + 2) # BR
-			ac.glVertex2f(203 + x + s_w, 32.5 + parabola(x + s_w, p_w, 30.5))       # TR
+			ac.glVertex2f(200 + x,       33 + parabola(x,       p_w, 31.5))     # TL
+			ac.glVertex2f(200 + x,       33 + parabola(x,       p_w, 31.5) + 3) # BL
+			ac.glVertex2f(200 + x + s_w, 33 + parabola(x + s_w, p_w, 31.5) + 3) # BR
+			ac.glVertex2f(200 + x + s_w, 33 + parabola(x + s_w, p_w, 31.5))     # TR
 			ac.glEnd()
 
 	# drs
